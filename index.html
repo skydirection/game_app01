@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ひらがな麻雀卓</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Antique&family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap">
+<style>
+:root{
+  color-scheme: dark;
+  --felt:#1f5a45; --felt-deep:#153f31; --ink:#f3efe2; --muted:#a9c7b8;
+  --tile:#f7f1df; --tile-edge:#d9cfb2; --tile-ink:#1c2a24;
+  --gold:#e8b64c; --red:#d8553f;
+  --tilefont:"Zen Antique","Hiragino Mincho ProN","Yu Mincho",serif;
+  --ui:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","Meiryo",system-ui,sans-serif;
+}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(ellipse at 50% 30%,var(--felt),var(--felt-deep) 80%) fixed;background-color:var(--felt-deep);color:var(--ink);font-family:var(--ui);font-size:15px}
+.wrap{max-width:760px;margin:0 auto;padding:16px;padding-block:16px 40px;display:flex;flex-direction:column;gap:14px}
+h1{font-family:var(--tilefont);font-weight:400;font-size:24px;margin:0;letter-spacing:.08em}
+.sub{color:var(--muted);font-size:13px}
+button{font-family:var(--ui);font-weight:700;font-size:15px;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;background:var(--ink);color:var(--tile-ink)}
+button.gold{background:var(--gold)}
+button.red{background:var(--red);color:#fff}
+button.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--muted)}
+button.small{font-size:13px;padding:6px 12px}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.panel{background:rgba(0,0,0,.18);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.panel.hot{box-shadow:inset 0 0 0 2px var(--gold)}
+input,select{font-family:var(--ui);font-size:15px;padding:8px 10px;border-radius:8px;border:1px solid var(--muted);background:rgba(0,0,0,.25);color:var(--ink);min-width:0}
+.tile{font-family:var(--tilefont);width:44px;height:58px;border-radius:7px;background:var(--tile);color:var(--tile-ink);display:inline-grid;place-items:center;font-size:30px;line-height:1;box-shadow:0 4px 0 var(--tile-edge),0 6px 8px rgba(0,0,0,.35);user-select:none;cursor:pointer;transition:transform .12s;border:0;padding:0}
+.tile.sel{transform:translateY(-10px);box-shadow:0 4px 0 var(--gold),0 10px 12px rgba(0,0,0,.4)}
+.tile.new{background:#fff8d6}
+.tile.sm{width:30px;height:40px;font-size:20px;border-radius:5px;box-shadow:0 3px 0 var(--tile-edge);cursor:default}
+.tile.lg{width:60px;height:80px;font-size:42px;cursor:default}
+.hand{display:flex;flex-wrap:wrap;gap:6px;row-gap:18px;padding-top:12px}
+.grp{display:flex;gap:3px;padding:6px;border-radius:10px;background:rgba(0,0,0,.2);border:1.5px dashed rgba(255,255,255,.18)}
+.opp{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.opp .panel{padding:10px}
+.name{font-weight:800}
+.name.turn{color:var(--gold)}
+.river{display:flex;flex-wrap:wrap;gap:3px;min-height:40px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{font-size:12px;padding:3px 10px;border-radius:99px;background:rgba(0,0,0,.3);color:var(--muted);font-variant-numeric:tabular-nums}
+.big{font-family:var(--tilefont);font-size:30px}
+.msg{min-height:20px;color:var(--gold);font-weight:700}
+.words{display:flex;flex-wrap:wrap;gap:10px}
+.word{font-family:var(--tilefont);font-size:26px;background:var(--tile);color:var(--tile-ink);padding:6px 14px;border-radius:8px}
+.help{font-size:13px;color:var(--muted);line-height:1.7}
+.seats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.seat{padding:12px;border-radius:10px;border:1.5px dashed var(--muted);display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.seat.taken{border-style:solid;background:rgba(0,0,0,.2)}
+.seat.me{border-color:var(--gold)}
+@media (prefers-reduced-motion:reduce){.tile{transition:none}}
+.share{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.share input{flex:1;min-width:0}
+</style>
+</head><body>
+
+<div class="wrap" id="app"><div class="sub">卓に接続中…</div></div>
+
+<script>
+// ===== ここに Supabase の値を貼る（Project Settings → API） =====
+const SUPABASE_URL = "https://rbjevxoltmttatffcjho.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJiamV2eG9sdG10dGF0ZmZjamhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzNTE1MDgsImV4cCI6MjEwNTkyNzUwOH0._hxNkoKe_SKhzodBMmk64r1gZdKpyWfR9HfkiGOpawY";
+// ================================================================
+const DIST="あ4い5う5え3お4か5き4く4け3こ4さ3し5す3せ2そ3た4ち3つ3て3と4な3に3ぬ1ね2の3は3ひ2ふ2へ1ほ2ま3み2む2め2も2や2ゆ2よ2ら2り3る3れ2ろ2わ2を1ん5が2ぎ1ぐ1げ1ご2ざ1じ2ず1ぜ1ぞ1だ2で2ど2ば1び1ぶ1べ1ぼ1ぱ1ぴ1ぷ1ぺ1ぽ1ー2っ2ゃ1ゅ1ょ2";
+function buildWall(){const w=[];const re=/(\D)(\d+)/g;let m;while((m=re.exec(DIST))){for(let i=0;i<+m[2];i++)w.push(m[1]);}
+  for(let i=w.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[w[i],w[j]]=[w[j],w[i]];}return w;}
+const MODES={short:{label:"カード版（2・3・3 / 8枚）",groups:[2,3,3]},full:{label:"牌版（2・3・3・3・3 / 14枚）",groups:[2,3,3,3,3]}};
+const $=s=>document.querySelector(s);
+const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// この端末のプレイヤーID（端末ごと）
+let myId; try{myId=localStorage.getItem("hj_pid");}catch(e){}
+if(!myId){myId="p"+Math.random().toString(36).slice(2,10);try{localStorage.setItem("hj_pid",myId);}catch(e){}}
+let myName=""; try{myName=localStorage.getItem("hj_name")||"";}catch(e){}
+
+let sb=null, G=null, exists=false, sel=null, msg="", busy=false;
+const EMPTY={phase:"lobby",mode:"short",seats:{},scores:{}};
+
+// ルーム番号は URL の # 以降（なければ自動で作る）
+let room=(location.hash||"").slice(1).replace(/[^a-z0-9]/gi,"").toLowerCase();
+if(!room){room=Math.random().toString(36).slice(2,6);history.replaceState(null,"","#"+room);}
+window.addEventListener("hashchange",()=>location.reload());
+
+async function fetchState(){
+  const {data,error}=await sb.from("hj_tables").select("state").eq("id",room).maybeSingle();
+  if(error){msg="読み込みエラー："+error.message;render();return;}
+  exists=!!data; G=data?data.state:EMPTY; onState();
+}
+function onState(){ if(G.phase!=="play"||meIdx()!==G.turn) sel=null; render(); }
+
+async function write(patch,full){
+  if(busy) return; busy=true;
+  try{
+    let error;
+    if(full||!exists) ({error}=await sb.from("hj_tables").upsert({id:room,state:full||Object.assign({},G||EMPTY,patch),updated_at:new Date().toISOString()}));
+    else ({error}=await sb.rpc("hj_patch",{p_id:room,p_patch:patch}));
+    if(error) throw error;
+    await fetchState();
+  }catch(e){ msg="通信エラー：もう一度押してください"; render(); }
+  finally{ busy=false; }
+}
+
+// ---- 派生 ----
+const players=()=>G.players||[];
+const meIdx=()=>players().findIndex(p=>p.pid===myId);
+const hand=i=>(G.hands&&G.hands[i])||[];
+const river=i=>(G.rivers&&G.rivers[i])||[];
+const handSize=()=>MODES[G.mode].groups.reduce((a,b)=>a+b,0);
+
+// ---- 操作 ----
+function claimSeat(i){
+  const n=($("#myname")?.value||"").trim()||"名無し"; myName=n; try{localStorage.setItem("hj_name",n);}catch(e){}
+  const seats=Object.assign({},G.seats||{}); for(const k in seats) if(seats[k]&&seats[k].pid===myId) seats[k]=null;
+  seats[i]={pid:myId,name:n}; write({seats});
+}
+function leaveSeat(){const seats=Object.assign({},G.seats||{});for(const k in seats) if(seats[k]&&seats[k].pid===myId) seats[k]=null; write({seats});}
+function deal(dealer){
+  const ps=[0,1,2,3].map(i=>G.seats&&G.seats[i]).filter(Boolean);
+  if(!ps.length){msg="まず席に座ってください";render();return;}
+  const wall=buildWall(); const hands={}, rivers={};
+  ps.forEach((_,i)=>{hands[i]=[];rivers[i]=[];});
+  for(let r=0;r<handSize()-1;r++) ps.forEach((_,i)=>hands[i].push(wall.pop()));
+  const scores=Object.assign({},G.scores||{}); ps.forEach(p=>{if(scores[p.pid]==null)scores[p.pid]=0;});
+  const d=(dealer||0)%ps.length;
+  write(null,{phase:"play",mode:G.mode,seats:G.seats||{},players:ps,wall,hands,rivers,scores,turn:d,dealer:d,drawn:false,ron:false,last:null,pending:null,result:null});
+}
+function drawTile(){
+  const me=meIdx(); if(me!==G.turn||G.drawn) return;
+  if(!G.wall.length){write({phase:"draw"});return;}
+  const wall=G.wall.slice(); const h=hand(me).slice(); h.push(wall.pop()); sel=null; msg="";
+  write({wall,hands:{[me]:h},drawn:true,ron:false,last:G.last?Object.assign({},G.last,{open:false}):null});
+}
+function tapTile(i){
+  const me=meIdx(); const h=hand(me).slice();
+  if(sel===null){sel=i;render();return;}
+  if(sel===i){sel=null;render();return;}
+  [h[sel],h[i]]=[h[i],h[sel]]; sel=null; write({hands:{[me]:h}});
+}
+function discard(){
+  const me=meIdx(); if(me!==G.turn||!G.drawn) return;
+  if(sel===null){msg="捨てる牌をタップして選んでください";render();return;}
+  const h=hand(me).slice(); const t=h.splice(sel,1)[0]; const r=river(me).concat(t); sel=null; msg="";
+  write({hands:{[me]:h},rivers:{[me]:r},last:{tile:t,from:me,open:true},turn:(me+1)%players().length,drawn:false,ron:false});
+}
+function ronClaim(){
+  const me=meIdx(); const L=G.last; if(!L||!L.open||L.from===me||G.drawn) return;
+  const h=hand(me).concat(L.tile); const r=river(L.from).slice(0,-1);
+  msg="ロン！並べ替えて「アガリ宣言」してください（無理なら1枚捨ててもOK）";
+  write({hands:{[me]:h},rivers:{[L.from]:r},turn:me,drawn:true,ron:true,last:Object.assign({},L,{open:false})});
+}
+function declare(){
+  const me=meIdx(); const h=hand(me); let i=0;
+  const words=MODES[G.mode].groups.map(n=>{const w=h.slice(i,i+n).join("");i+=n;return w;});
+  if(players().length===1){finishWin(me,words);return;}
+  write({pending:{p:me,words,ron:!!G.ron}});
+}
+function finishWin(p,words){
+  const pid=players()[p].pid;
+  write({phase:"win",pending:null,result:{p,words},scores:{[pid]:(G.scores[pid]||0)+3}});
+}
+function judge(ok){
+  const P=G.pending; if(!P) return;
+  if(ok) finishWin(P.p,P.words);
+  else{const pid=players()[P.p].pid; write({pending:null,scores:{[pid]:(G.scores[pid]||0)-1}});}
+}
+
+// ---- 描画 ----
+function tileBtn(t,i,isNew){return `<button class="tile${sel===i?" sel":""}${isNew?" new":""}" data-i="${i}" aria-label="${esc(t)}">${esc(t)}</button>`;}
+function handHTML(h,newLast){
+  let i=0,out=""; MODES[G.mode].groups.forEach(n=>{out+=`<div class="grp">`;for(let k=0;k<n&&i<h.length;k++,i++)out+=tileBtn(h[i],i,false);out+=`</div>`;});
+  if(i<h.length){out+=`<div class="grp" style="border-color:var(--gold)">`;for(;i<h.length;i++)out+=tileBtn(h[i],i,newLast&&i===h.length-1);out+=`</div>`;}
+  return out;
+}
+function scoreHTML(){const ps=players().length?players():Object.values(G.seats||{}).filter(Boolean);
+  return ps.map(p=>`<span class="pill">${esc(p.name)} ${G.scores?.[p.pid]||0}点</span>`).join("");}
+
+function render(){
+  const a=$("#app"); if(!G){a.innerHTML=`<div class="sub">卓に接続中…</div>`;return;}
+  const head=`<div class="bar"><h1>ひらがな麻雀卓</h1><div class="row">${G.phase!=="lobby"?`<span class="pill">山 ${G.wall?.length??0}</span>`:""}${scoreHTML()}</div></div>`;
+  if(G.phase==="lobby"){
+    const mySeat=[0,1,2,3].find(i=>G.seats?.[i]?.pid===myId);
+    a.innerHTML=`${head}<div class="panel"><div class="sub">ルーム <b>${esc(room)}</b>：このURLを友達に送って、各自のスマホで席に座ってください</div>
+      <div class="share"><input id="shareUrl" readonly value="${esc(location.href)}" aria-label="招待URL"><button class="small" id="copyBtn">コピー</button></div></div>
+    <div class="panel">
+      <div class="row"><input id="myname" placeholder="あなたの名前" value="${esc(myName)}" aria-label="あなたの名前" maxlength="12"></div>
+      <div class="seats">${[0,1,2,3].map(i=>{const s=G.seats?.[i];return s
+        ?`<div class="seat taken${s.pid===myId?" me":""}"><span class="sub">席${i+1}</span><b>${esc(s.name)}${s.pid===myId?"（あなた）":""}</b>${s.pid===myId?`<button class="ghost small" data-leave>立つ</button>`:""}</div>`
+        :`<div class="seat"><span class="sub">席${i+1}</span><span class="sub">空席</span><button class="small" data-seat="${i}">ここに座る</button></div>`;}).join("")}</div>
+      <div class="row"><label class="sub" for="mode">ルール</label><select id="mode">${Object.entries(MODES).map(([k,m])=>`<option value="${k}" ${k===G.mode?"selected":""}>${m.label}</option>`).join("")}</select></div>
+      <button class="gold" id="startBtn" ${mySeat===undefined?"disabled":""}>対局開始（座っている人で配牌）</button>
+      <div class="msg">${esc(msg)}</div>
+    </div>
+    <div class="panel help"><b>遊び方</b><br>
+      ・自分の番：「ツモ」で1枚引く → 牌をタップして2枚ずつ入れ替え → 1枚選んで「捨てる」<br>
+      ・枠の区切りどおりに2文字・3文字…の実在する言葉がそろったら「アガリ宣言」→ 他の誰かが判定<br>
+      ・人の捨て牌でアガれそうなら、次の人がツモる前に「ロン」<br>
+      ・アガリ+3点／チョンボ−1点。「ー」「っ」「ゃ」なども牌として使えます</div>`;
+    a.querySelectorAll("[data-seat]").forEach(b=>b.onclick=()=>claimSeat(+b.dataset.seat));
+    a.querySelectorAll("[data-leave]").forEach(b=>b.onclick=leaveSeat);
+    $("#copyBtn").onclick=async()=>{const i=$("#shareUrl");try{await navigator.clipboard.writeText(i.value);$("#copyBtn").textContent="コピーしました";}catch(e){i.select();}};
+    $("#mode").onchange=e=>write({mode:e.target.value});
+    $("#startBtn").onclick=()=>deal(0);
+    return;
+  }
+  const me=meIdx(), ps=players(), turnP=ps[G.turn];
+  const opp=ps.map((q,k)=>`<div class="panel"><div class="bar"><span class="name${k===G.turn&&G.phase==="play"?" turn":""}">${esc(q.name)}${k===me?"（あなた）":""}</span><span class="pill">手牌${hand(k).length}</span></div>
+     <div class="river">${river(k).map(t=>`<span class="tile sm">${esc(t)}</span>`).join("")||'<span class="sub">捨て牌なし</span>'}</div></div>`).join("");
+  let body="";
+  const again=`<div class="row"><button class="gold" id="next">次の局へ</button><button class="ghost" id="toLobby">ロビーに戻る</button></div>`;
+  if(G.phase==="win"){
+    const R=G.result;
+    body=`<div class="panel hot"><div class="big">${esc(ps[R.p]?.name)} アガリ！</div><div class="words">${R.words.map(w=>`<span class="word">${esc(w)}</span>`).join("")}</div>${again}</div>`;
+  }else if(G.phase==="draw"){
+    body=`<div class="panel"><div class="big">流局</div><div class="sub">山がなくなりました</div>${again}</div>`;
+  }else{
+    const P=G.pending, L=G.last;
+    if(P){
+      body+=`<div class="panel hot"><div class="sub">${esc(ps[P.p].name)} の${P.ron?"ロン":"ツモ"}宣言</div><div class="words">${P.words.map(w=>`<span class="word">${esc(w)}</span>`).join("")}</div>
+        ${me>=0&&me!==P.p?`<div class="sub">ぜんぶ実在する言葉？</div><div class="row"><button class="gold" data-judge="1">認める（アガリ）</button><button class="ghost" data-judge="0">認めない（チョンボ）</button></div>`:`<div class="sub">ほかの人の判定待ち…</div>`}</div>`;
+    }
+    if(!P&&L&&L.open&&!G.drawn&&me>=0&&me!==L.from){
+      body+=`<div class="panel"><div class="row"><span class="tile lg">${esc(L.tile)}</span><div><div class="sub">${esc(ps[L.from].name)} の捨て牌</div><button class="red" id="ronBtn">ロン！</button></div></div></div>`;
+    }
+    if(me>=0){
+      const myTurn=me===G.turn;
+      body+=`<div class="panel${myTurn?" hot":""}">
+        <div class="bar"><b>${myTurn?"あなたの番です":esc(turnP?.name)+" の番"}</b><span class="sub">タップ2回で入れ替え／枠＝言葉の区切り</span></div>
+        <div class="hand">${handHTML(hand(me),myTurn&&G.drawn)}</div>
+        <div class="msg">${esc(msg)}</div>
+        ${myTurn&&!P?`<div class="row">${G.drawn?`<button class="red" id="discardBtn">選んだ牌を捨てる</button><button class="gold" id="declBtn">アガリ宣言</button>`:`<button class="gold" id="drawBtn">ツモ（1枚引く）</button>`}</div>`:""}
+      </div>`;
+    }else body+=`<div class="panel"><div class="sub">対局中です（観戦中）。次の局からはロビーで席に座れます。</div></div>`;
+  }
+  a.innerHTML=`${head}${body}<div class="opp">${opp}</div><div><button class="ghost small" id="toLobby2">対局をやめてロビーへ</button></div>`;
+  a.querySelectorAll(".hand .tile").forEach(b=>b.onclick=()=>tapTile(+b.dataset.i));
+  a.querySelectorAll("[data-judge]").forEach(b=>b.onclick=()=>judge(b.dataset.judge==="1"));
+  const on=(id,f)=>{const e=$("#"+id);if(e)e.onclick=f;};
+  on("drawBtn",drawTile); on("discardBtn",discard); on("declBtn",declare); on("ronBtn",ronClaim);
+  on("next",()=>deal((G.dealer||0)+1));
+  on("toLobby",()=>write({phase:"lobby"}));
+  on("toLobby2",()=>{const b=$("#toLobby2");if(b.dataset.c){write({phase:"lobby"});}else{b.dataset.c="1";b.textContent="本当にやめる？もう一度押す";}});
+}
+
+(async()=>{
+  if(!window.supabase||SUPABASE_URL.includes("YOUR-PROJECT")){$("#app").innerHTML=`<div class="panel"><b>設定が必要です</b><div class="sub">index.html 冒頭の SUPABASE_URL と SUPABASE_ANON_KEY を設定してください。</div></div>`;return;}
+  sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+  await fetchState();
+  sb.channel("hj-"+room)
+    .on("postgres_changes",{event:"*",schema:"public",table:"hj_tables",filter:"id=eq."+room},p=>{
+      if(p.new&&p.new.state){exists=true;G=p.new.state;onState();}})
+    .subscribe();
+  // リアルタイムが途切れたとき用の保険
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)fetchState();});
+  setInterval(()=>{if(!document.hidden&&!busy)fetchState();},8000);
+})();
+</script>
+</body></html>
