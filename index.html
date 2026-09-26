@@ -35,8 +35,12 @@ input,select{font-family:var(--ui);font-size:15px;padding:8px 10px;border-radius
 .tile.new{background:#fff8d6}
 .tile.sm{width:30px;height:40px;font-size:20px;border-radius:5px;box-shadow:0 3px 0 var(--tile-edge);cursor:default}
 .tile.lg{width:60px;height:80px;font-size:42px;cursor:default}
-.hand{display:flex;flex-wrap:wrap;gap:6px;row-gap:18px;padding-top:12px}
-.grp{display:flex;gap:3px;padding:6px;border-radius:10px;background:rgba(0,0,0,.2);border:1.5px dashed rgba(255,255,255,.18)}
+.hand{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding-top:6px}
+.grp{display:flex;align-items:center;gap:8px;padding:6px 8px;padding-top:14px;border-radius:10px;background:rgba(0,0,0,.2);border:1.5px dashed rgba(255,255,255,.18)}
+.gtiles{display:flex;gap:4px;flex-wrap:nowrap}
+.glbl{font-size:11px;color:var(--muted);width:3.4em;flex:none;white-space:nowrap}
+.tile.empty{background:transparent;box-shadow:none;border:2px dashed rgba(255,255,255,.35)}
+.tile.empty.target{border-color:var(--gold)}
 .opp{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
 .opp .panel{padding:10px}
 .name{font-weight:800}
@@ -91,7 +95,14 @@ async function fetchState(){
   if(error){msg="読み込みエラー："+error.message;render();return;}
   exists=!!data; G=data?data.state:EMPTY; onState();
 }
-function onState(){ if(G.phase!=="play"||meIdx()!==G.turn) sel=null; render(); }
+let lastJson="";
+function onState(){ const j=JSON.stringify(G); if(j===lastJson) return; lastJson=j;
+  if(G.phase!=="play"||meIdx()!==G.turn) sel=null; render(); }
+function renameSeat(){
+  const k=[0,1,2,3].find(i=>G.seats?.[i]?.pid===myId); const n=myName.trim()||"名無し";
+  if(k===undefined||G.seats[k].name===n) return;
+  write({seats:{[k]:{pid:myId,name:n}}});
+}
 
 async function write(patch,full){
   if(busy) return; busy=true;
@@ -125,37 +136,46 @@ function deal(dealer){
   const wall=buildWall(); const hands={}, rivers={};
   ps.forEach((_,i)=>{hands[i]=[];rivers[i]=[];});
   for(let r=0;r<handSize()-1;r++) ps.forEach((_,i)=>hands[i].push(wall.pop()));
+  ps.forEach((_,i)=>hands[i].push(null)); // 最後の枠は空けておく（ツモ・アガリ牌用）
   const scores=Object.assign({},G.scores||{}); ps.forEach(p=>{if(scores[p.pid]==null)scores[p.pid]=0;});
-  const d=(dealer||0)%ps.length;
+  const d=(dealer||0)%ps.length; newSlot=-1;
   write(null,{phase:"play",mode:G.mode,seats:G.seats||{},players:ps,wall,hands,rivers,scores,turn:d,dealer:d,drawn:false,ron:false,last:null,pending:null,result:null});
 }
+// 手牌は常に枠の数ぶんの配列。空き枠は null
+function slots(i){const h=hand(i).slice();while(h.length<handSize())h.push(null);return h.slice(0,handSize());}
+function fillEmpty(h,t){let k=h.indexOf(null);if(k<0){k=h.length;h.push(t);}else h[k]=t;return k;}
+let newSlot=-1;
 function drawTile(){
   const me=meIdx(); if(me!==G.turn||G.drawn) return;
   if(!G.wall.length){write({phase:"draw"});return;}
-  const wall=G.wall.slice(); const h=hand(me).slice(); h.push(wall.pop()); sel=null; msg="";
+  const wall=G.wall.slice(); const h=slots(me); newSlot=fillEmpty(h,wall.pop()); sel=null; msg="";
   write({wall,hands:{[me]:h},drawn:true,ron:false,last:G.last?Object.assign({},G.last,{open:false}):null});
 }
 function tapTile(i){
-  const me=meIdx(); const h=hand(me).slice();
-  if(sel===null){sel=i;render();return;}
+  const me=meIdx(); const h=slots(me);
+  if(sel===null){ if(h[i]===null) return; sel=i;render();return;}
   if(sel===i){sel=null;render();return;}
-  [h[sel],h[i]]=[h[i],h[sel]]; sel=null; write({hands:{[me]:h}});
+  [h[sel],h[i]]=[h[i],h[sel]];
+  if(newSlot===sel)newSlot=i;else if(newSlot===i)newSlot=sel;
+  sel=null; write({hands:{[me]:h}});
 }
 function discard(){
   const me=meIdx(); if(me!==G.turn||!G.drawn) return;
-  if(sel===null){msg="捨てる牌をタップして選んでください";render();return;}
-  const h=hand(me).slice(); const t=h.splice(sel,1)[0]; const r=river(me).concat(t); sel=null; msg="";
+  const h=slots(me);
+  if(sel===null||h[sel]===null){msg="捨てる牌をタップして選んでください";render();return;}
+  const t=h[sel]; h[sel]=null; const r=river(me).concat(t); sel=null; msg=""; newSlot=-1;
   write({hands:{[me]:h},rivers:{[me]:r},last:{tile:t,from:me,open:true},turn:(me+1)%players().length,drawn:false,ron:false});
 }
 function ronClaim(){
   const me=meIdx(); const L=G.last; if(!L||!L.open||L.from===me||G.drawn) return;
-  const h=hand(me).concat(L.tile); const r=river(L.from).slice(0,-1);
+  const h=slots(me); newSlot=fillEmpty(h,L.tile); const r=river(L.from).slice(0,-1);
   msg="ロン！並べ替えて「アガリ宣言」してください（無理なら1枚捨ててもOK）";
   write({hands:{[me]:h},rivers:{[L.from]:r},turn:me,drawn:true,ron:true,last:Object.assign({},L,{open:false})});
 }
 function declare(){
-  const me=meIdx(); const h=hand(me); let i=0;
-  const words=MODES[G.mode].groups.map(n=>{const w=h.slice(i,i+n).join("");i+=n;return w;});
+  const me=meIdx(); const h=slots(me);
+  if(h.includes(null)){msg="空いている枠があります";render();return;}
+  let i=0; const words=MODES[G.mode].groups.map(n=>{const w=h.slice(i,i+n).join("");i+=n;return w;});
   if(players().length===1){finishWin(me,words);return;}
   write({pending:{p:me,words,ron:!!G.ron}});
 }
@@ -170,16 +190,21 @@ function judge(ok){
 }
 
 // ---- 描画 ----
-function tileBtn(t,i,isNew){return `<button class="tile${sel===i?" sel":""}${isNew?" new":""}" data-i="${i}" aria-label="${esc(t)}">${esc(t)}</button>`;}
-function handHTML(h,newLast){
-  let i=0,out=""; MODES[G.mode].groups.forEach(n=>{out+=`<div class="grp">`;for(let k=0;k<n&&i<h.length;k++,i++)out+=tileBtn(h[i],i,false);out+=`</div>`;});
-  if(i<h.length){out+=`<div class="grp" style="border-color:var(--gold)">`;for(;i<h.length;i++)out+=tileBtn(h[i],i,newLast&&i===h.length-1);out+=`</div>`;}
+function tileBtn(t,i,isNew){
+  if(t===null) return `<button class="tile empty${sel!==null?" target":""}" data-i="${i}" aria-label="空き枠"></button>`;
+  return `<button class="tile${sel===i?" sel":""}${isNew?" new":""}" data-i="${i}" aria-label="${esc(t)}">${esc(t)}</button>`;}
+function handHTML(h,hi){
+  let i=0,out=""; MODES[G.mode].groups.forEach((n,g)=>{
+    out+=`<div class="grp"><span class="glbl">${n}文字</span><div class="gtiles">`;
+    for(let k=0;k<n;k++,i++) out+=tileBtn(h[i]??null,i,i===hi);
+    out+=`</div></div>`;});
   return out;
 }
 function scoreHTML(){const ps=players().length?players():Object.values(G.seats||{}).filter(Boolean);
   return ps.map(p=>`<span class="pill">${esc(p.name)} ${G.scores?.[p.pid]||0}点</span>`).join("");}
 
 function render(){
+  const ae=document.activeElement; const focusName=ae&&ae.id==="myname"?{pos:ae.selectionStart}:null;
   const a=$("#app"); if(!G){a.innerHTML=`<div class="sub">卓に接続中…</div>`;return;}
   const head=`<div class="bar"><h1>ひらがな麻雀卓</h1><div class="row">${G.phase!=="lobby"?`<span class="pill">山 ${G.wall?.length??0}</span>`:""}${scoreHTML()}</div></div>`;
   if(G.phase==="lobby"){
@@ -200,6 +225,11 @@ function render(){
       ・枠の区切りどおりに2文字・3文字…の実在する言葉がそろったら「アガリ宣言」→ 他の誰かが判定<br>
       ・人の捨て牌でアガれそうなら、次の人がツモる前に「ロン」<br>
       ・アガリ+3点／チョンボ−1点。「ー」「っ」「ゃ」なども牌として使えます</div>`;
+    const nm=$("#myname");
+    nm.oninput=()=>{myName=nm.value;try{localStorage.setItem("hj_name",myName);}catch(e){}};
+    nm.onchange=renameSeat;
+    nm.onkeydown=e=>{if(e.key==="Enter")nm.blur();};
+    if(focusName){nm.focus();try{nm.setSelectionRange(focusName.pos,focusName.pos);}catch(e){}}
     a.querySelectorAll("[data-seat]").forEach(b=>b.onclick=()=>claimSeat(+b.dataset.seat));
     a.querySelectorAll("[data-leave]").forEach(b=>b.onclick=leaveSeat);
     $("#copyBtn").onclick=async()=>{const i=$("#shareUrl");try{await navigator.clipboard.writeText(i.value);$("#copyBtn").textContent="コピーしました";}catch(e){i.select();}};
@@ -208,7 +238,7 @@ function render(){
     return;
   }
   const me=meIdx(), ps=players(), turnP=ps[G.turn];
-  const opp=ps.map((q,k)=>`<div class="panel"><div class="bar"><span class="name${k===G.turn&&G.phase==="play"?" turn":""}">${esc(q.name)}${k===me?"（あなた）":""}</span><span class="pill">手牌${hand(k).length}</span></div>
+  const opp=ps.map((q,k)=>`<div class="panel"><div class="bar"><span class="name${k===G.turn&&G.phase==="play"?" turn":""}">${esc(q.name)}${k===me?"（あなた）":""}</span><span class="pill">手牌${hand(k).filter(Boolean).length}</span></div>
      <div class="river">${river(k).map(t=>`<span class="tile sm">${esc(t)}</span>`).join("")||'<span class="sub">捨て牌なし</span>'}</div></div>`).join("");
   let body="";
   const again=`<div class="row"><button class="gold" id="next">次の局へ</button><button class="ghost" id="toLobby">ロビーに戻る</button></div>`;
@@ -229,8 +259,8 @@ function render(){
     if(me>=0){
       const myTurn=me===G.turn;
       body+=`<div class="panel${myTurn?" hot":""}">
-        <div class="bar"><b>${myTurn?"あなたの番です":esc(turnP?.name)+" の番"}</b><span class="sub">タップ2回で入れ替え／枠＝言葉の区切り</span></div>
-        <div class="hand">${handHTML(hand(me),myTurn&&G.drawn)}</div>
+        <div class="bar"><b>${myTurn?"あなたの番です":esc(turnP?.name)+" の番"}</b><span class="sub">タップ2回で入れ替え（空き枠へも移動可）</span></div>
+        <div class="hand">${handHTML(slots(me),myTurn&&G.drawn?newSlot:-1)}</div>
         <div class="msg">${esc(msg)}</div>
         ${myTurn&&!P?`<div class="row">${G.drawn?`<button class="red" id="discardBtn">選んだ牌を捨てる</button><button class="gold" id="declBtn">アガリ宣言</button>`:`<button class="gold" id="drawBtn">ツモ（1枚引く）</button>`}</div>`:""}
       </div>`;
