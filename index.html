@@ -210,11 +210,12 @@ function render(){
   if(G.phase==="lobby"){
     const mySeat=[0,1,2,3].find(i=>G.seats?.[i]?.pid===myId);
     a.innerHTML=`${head}<div class="panel"><div class="sub">ルーム <b>${esc(room)}</b>：このURLを友達に送って、各自のスマホで席に座ってください</div>
-      <div class="share"><input id="shareUrl" readonly value="${esc(location.href)}" aria-label="招待URL"><button class="small" id="copyBtn">コピー</button></div></div>
+      <div class="share"><input id="shareUrl" readonly value="${esc(location.href)}" aria-label="招待URL"><button class="small" id="copyBtn">コピー</button></div>
+      <div class="row"><button class="ghost small" id="newRoom">別の人と遊ぶ（新しい卓を作る）</button><button class="ghost small" id="resetRoom">この卓をリセット（全員退席・点数0）</button></div></div>
     <div class="panel">
       <div class="row"><input id="myname" placeholder="あなたの名前" value="${esc(myName)}" aria-label="あなたの名前" maxlength="12"></div>
       <div class="seats">${[0,1,2,3].map(i=>{const s=G.seats?.[i];return s
-        ?`<div class="seat taken${s.pid===myId?" me":""}"><span class="sub">席${i+1}</span><b>${esc(s.name)}${s.pid===myId?"（あなた）":""}</b>${s.pid===myId?`<button class="ghost small" data-leave>立つ</button>`:""}</div>`
+        ?`<div class="seat taken${s.pid===myId?" me":""}"><span class="sub">席${i+1}</span><b>${esc(s.name)}${s.pid===myId?"（あなた）":""}</b>${s.pid===myId?`<button class="ghost small" data-leave>立つ</button>`:`<button class="ghost small" data-kick="${i}">席を空ける</button>`}</div>`
         :`<div class="seat"><span class="sub">席${i+1}</span><span class="sub">空席</span><button class="small" data-seat="${i}">ここに座る</button></div>`;}).join("")}</div>
       <div class="row"><label class="sub" for="mode">ルール</label><select id="mode">${Object.entries(MODES).map(([k,m])=>`<option value="${k}" ${k===G.mode?"selected":""}>${m.label}</option>`).join("")}</select></div>
       <button class="gold" id="startBtn" ${mySeat===undefined?"disabled":""}>対局開始（座っている人で配牌）</button>
@@ -232,6 +233,10 @@ function render(){
     if(focusName){nm.focus();try{nm.setSelectionRange(focusName.pos,focusName.pos);}catch(e){}}
     a.querySelectorAll("[data-seat]").forEach(b=>b.onclick=()=>claimSeat(+b.dataset.seat));
     a.querySelectorAll("[data-leave]").forEach(b=>b.onclick=leaveSeat);
+    a.querySelectorAll("[data-kick]").forEach(b=>b.onclick=()=>{const seats=Object.assign({},G.seats||{});seats[b.dataset.kick]=null;write({seats});});
+    $("#newRoom").onclick=()=>{location.hash=Math.random().toString(36).slice(2,6);};
+    $("#resetRoom").onclick=()=>{const b=$("#resetRoom");if(!b.dataset.c){b.dataset.c="1";b.textContent="本当にリセット？もう一度押す";return;}
+      write(null,{phase:"lobby",mode:G.mode||"short",seats:{},scores:{}});};
     $("#copyBtn").onclick=async()=>{const i=$("#shareUrl");try{await navigator.clipboard.writeText(i.value);$("#copyBtn").textContent="コピーしました";}catch(e){i.select();}};
     $("#mode").onchange=e=>write({mode:e.target.value});
     $("#startBtn").onclick=()=>deal(0);
